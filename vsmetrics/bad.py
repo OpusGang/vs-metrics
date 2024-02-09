@@ -1,4 +1,6 @@
 from os import PathLike
+from typing import Callable, Optional
+from stgpytools import mod_x
 from vstools import vs
 
 
@@ -14,45 +16,62 @@ class MDSI():
         return _MDSI(reference, distorted)
 
 
-class WADIQAM():
-    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode, model_path: PathLike = None) -> vs.VideoNode:
-        from vs_wadiqam_chainer import wadiqam_fr
-        from vstools import mod_x
-        
+class WADIQAM:
+    MODULO_BASE = 32
+    DATASET = 'tid'
+    EVALUATION_METHOD = 'patchwise'
+    MAX_BATCH_SIZE = 2040
+
+    def __init__(self) -> None:
+        from vs_wadiqam_chainer import wadiqam_fr, wadiqam_nr
+        self._wadiqam_fr = wadiqam_fr
+        self._wadiqam_nr = wadiqam_nr
+
+    def _prepare(
+        self,
+        reference: vs.VideoNode,
+        distorted: Optional[vs.VideoNode] = None
+    ) -> tuple[vs.VideoNode, Optional[vs.VideoNode]]:
+
+        rw = [mod_x(i, self.MODULO_BASE) for i in (reference.width, reference.height)]
+        prepared_reference = reference.resize.Lanczos(width=rw[0], height=rw[1])
+
+        if distorted is not None:
+            prepared_distorted = distorted.resize.Lanczos(width=rw[0], height=rw[1])
+            return prepared_reference, prepared_distorted
+
+        return prepared_reference, None
+
+    def calculate(
+        self,
+        reference: vs.VideoNode,
+        distorted: Optional[vs.VideoNode] = None,
+        model_path: PathLike = None
+    ) -> vs.VideoNode:
+
         if model_path is None:
-            raise ValueError("model_path is required for WADIQAM")
+            raise ValueError("model_path is required for WADIQAM calculations.")
 
-        rw = [mod_x(i, 32) for i in (reference.width, reference.height)]
-        reference, distorted = [c.resize.Spline64(width=rw[0], height=rw[1]) for c in (reference, distorted)]
+        prepared_reference, prepared_distorted = self._prepare(
+            reference, distorted
+            )
 
-        measure = wadiqam_fr(
-            clip1=reference,
-            clip2=distorted,
-            model_folder_path=model_path,
-            dataset='tid',
-            top='patchwise',
-            max_batch_size=2040
-        )
-
-        return measure
-
-class WADIQAM_NR():
-    def calculate(self, reference: vs.VideoNode, model_path: PathLike = None) -> vs.VideoNode:
-        from vs_wadiqam_chainer import wadiqam_nr
-        from vstools import mod_x
-        
-        if model_path is None:
-            raise ValueError("model_path is required for WADIQAM")
-
-        rw = [mod_x(i, 32) for i in (reference.width, reference.height)]
-        reference = [c.resize.Spline64(width=rw[0], height=rw[1]) for c in (reference)]
-
-        measure = wadiqam_nr(
-            clip=reference,
-            model_folder_path=model_path,
-            dataset='tid',
-            top='patchwise',
-            max_batch_size=2040
-        )
+        if prepared_distorted is not None:
+            measure = self._wadiqam_fr(
+                clip1=prepared_reference,
+                clip2=prepared_distorted,
+                model_folder_path=model_path,
+                dataset=self.DATASET,
+                top=self.EVALUATION_METHOD,
+                max_batch_size=self.MAX_BATCH_SIZE
+            )
+        else:
+            measure = self._wadiqam_nr(
+                clip=prepared_reference,
+                model_folder_path=model_path,
+                dataset=self.DATASET,
+                top=self.EVALUATION_METHOD,
+                max_batch_size=self.MAX_BATCH_SIZE
+            )
 
         return measure

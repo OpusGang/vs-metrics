@@ -47,7 +47,7 @@ def pre_process(
             new_height -= new_height % 4
     
             reference, distorted = [
-                clip.resize.Spline64(new_width, new_height)
+                clip.resize.Lanczos(new_width, new_height)
                 for clip in (reference, distorted)
             ]
 
