@@ -105,11 +105,19 @@ class PSNR_Fast():
         reference: vs.VideoNode,
         distorted: vs.VideoNode
     ) -> vs.VideoNode:
+        
+        match reference.format.color_family:
+            case vs.YUV:
+                props = ("psnr_y", "psnr_cb", "psnr_cr")
+            case vs.RGB:
+                props = ("psnr_r", "psnr_g", "psnr_b")
+            case vs.GRAY:
+                props = ("psnr_gray")
 
         metric = [
             core.complane.PSNR(i, j, propname=k)
             for i, j, k in zip(
-                split(reference), split(distorted), ("psnr_y", "psnr_cb", "psnr_cr")
+                split(reference), split(distorted), props
             )
         ]
 
