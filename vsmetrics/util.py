@@ -1,5 +1,32 @@
 from vstools import vs, core
 
+#def format_handler(ref_fmt, dist_fmt, fmt):
+#    pass
+##    ref_str = f"Reference: {ref_fmt.name}" if ref_fmt.id in fmt.formats else f"\033[91mIncorrect:\033[0m {ref_fmt.name}"
+##    dist_str = f"Distorted: {dist_fmt.name}" if dist_fmt.id in fmt.formats else f"\033[91mIncorrect:\033[0m {dist_fmt.name}"
+##    
+##    return ', '.join((ref_str, dist_str))
+#
+#def get_format_info(ref_fmt, dist_fmt, fmts):
+#    pass
+#    def add_incorrect_prefix(label, fmt):
+#        return f"{label}: {'Incorrect ' if fmt.id not in fmts else ''}{fmt.name}
+#    return ', '.join((add_incorrect_prefix("Reference", ref_fmt), add_incorrect_prefix("Distorted", dist_fmt)))
+
+        #def get_format_info(ref_fmt, dist_fmt, fmts):
+        #    def add_incorrect_prefix(label, fmt):
+        #        return f"{label}: {'Incorrect ' if fmt.id not in fmts else ''}{fmt.name}"
+        #
+        #    return ', '.join((add_incorrect_prefix("Reference", ref_fmt), add_incorrect_prefix("Distorted", dist_fmt)))
+        #
+        #if self.safe:
+        #    for input in (reference, distorted):
+        #        if input.format.id not in VMAFMetric.formats:
+        #            formatted_inputs = get_format_info(reference.format, distorted.format, VMAFMetric.formats)
+        #            valid_formats = ", ".join([_format.name for _format in self.formats])
+        #            err_msg = f"Unexpected format found.\nFormats passed: {formatted_inputs}\nExpected one of these formats: {valid_formats}"
+        #            raise ValueError(err_msg)
+
 class ReductionMode:
     class Crop:
         def __init__(self, percentage: int = 25):   

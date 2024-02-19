@@ -4,7 +4,7 @@
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
-from vstools import vs, core, clip_async_render
+from vstools import vs, core, clip_async_render, clip_data_gather
 
 class CSVHandler:
     def __init__(self, filename):
