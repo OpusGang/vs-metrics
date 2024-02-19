@@ -98,6 +98,24 @@ class SSIM_Alt:
         return merge_clip_props(self.object, self.dist).std.RemoveFrameProps("_Matrix")
 
 
+@dataclass
+class PSNR_Fast():
+    def calculate(
+        self,
+        reference: vs.VideoNode,
+        distorted: vs.VideoNode
+    ) -> vs.VideoNode:
+
+        metric = [
+            core.complane.PSNR(i, j, propname=k)
+            for i, j, k in zip(
+                split(reference), split(distorted), ("psnr_y", "psnr_cb", "psnr_cr")
+            )
+        ]
+
+        return merge_clip_props(reference, *metric)
+
+
 class WADIQAM:
     MAX_BATCH_SIZE = 2040
 
