@@ -1,9 +1,6 @@
 
 from enum import Enum
 
-from pydantic import PrivateAttr
-from sympy import Matrix
-
 class MatrixFMTC(Enum):
     
     BT601 = '601'      # ITU-R BT.601 / ITU-R BT.470-2 / SMPTE 170M. For Standard Definition content.
