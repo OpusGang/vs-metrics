@@ -1,7 +1,9 @@
+from dataclasses import dataclass
 from enum import Enum
 from os import PathLike
 from typing import Optional
-from vstools import vs, mod_x, merge_clip_props
+from vstools import split, vs, core, mod_x, merge_clip_props
+from .util import validate_format
 
 # https://github.com/WolframRhodium/muvsfunc/issues/59
 class GMSD:
@@ -57,6 +59,7 @@ class MDSI:
     def gradient_chromaticity_map(self) -> vs.VideoNode:
         return self.object[3]
 
+
 # https://github.com/WolframRhodium/muvsfunc/issues/59
 class SSIM_Alt:
     def __init__(
@@ -92,40 +95,60 @@ class SSIM_Alt:
             show_map=False
             )
         
-        return merge_clip_props(self.dist, self.object)
+        return self.object
+        #tmp = self.dist = self.dist.std.RemoveFrameProps(["_Matrix", "_ColorRange"])
+        #return merge_clip_props(tmp, self.object)
     
-    def map(self) -> vs.VideoNode:
-        return merge_clip_props(self.object, self.dist).std.RemoveFrameProps("_Matrix")
+    #def map(self) -> vs.VideoNode:
+    #    return merge_clip_props(self.object, self.dist)
 
 
 @dataclass
-class PSNR_Fast():
-    def calculate(
-        self,
-        reference: vs.VideoNode,
-        distorted: vs.VideoNode
-    ) -> vs.VideoNode:
-        
-        match reference.format.color_family:
-            case vs.YUV:
-                props = ("psnr_y", "psnr_cb", "psnr_cr")
-            case vs.RGB:
-                props = ("psnr_r", "psnr_g", "psnr_b")
-            case vs.GRAY:
-                props = ("psnr_gray")
+class PSNR_Alt:
+
+    _reference = None
+
+    def __post_init__(self):
+        self._set_reference(self._reference)
+
+    def _set_reference(self, reference: vs.VideoNode):
+        self._reference = reference
+
+    @property
+    def props(self) -> list[str]:
+        color_family = self._reference.format.color_family
+
+        props = {
+            vs.YUV: ["psnr_y", "psnr_cb", "psnr_cr"],
+            vs.RGB: ["psnr_r", "psnr_g", "psnr_b"],
+            vs.GRAY: ["psnr_gray"],
+        }.get(color_family, ["psnr_invalid"])
+
+        if props == ["psnr_invalid"]:
+            raise ValueError(f"Invalid color format: {color_family}")
+
+        return props
+
+    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode) -> vs.VideoNode:
+
+        self._set_reference(reference)
 
         metric = [
             core.complane.PSNR(i, j, propname=k)
-            for i, j, k in zip(
-                split(reference), split(distorted), props
-            )
+            for i, j, k in zip(split(reference), split(distorted), self.props)
         ]
 
-        return merge_clip_props(reference, *metric)
+        return merge_clip_props(distorted, *metric)
 
 
 class WADIQAM:
     MAX_BATCH_SIZE = 2040
+    formats: tuple[int] = (
+        vs.RGB24,
+        vs.RGB30,
+        vs.RGB48,
+        vs.RGBS
+    )
 
     class Dataset(Enum):
         TID = 'tid'
@@ -139,7 +162,7 @@ class WADIQAM:
         self,
         dataset: str = Dataset.TID,
         method: str = EvaluationMethod.PATCHWISE,
-        model_path: PathLike = None
+        model_path: PathLike = None,
     ) -> None:
 
         from vs_wadiqam_chainer import wadiqam_fr, wadiqam_nr
@@ -149,6 +172,9 @@ class WADIQAM:
         self.DATASET = dataset.value
         self.EVALUATION_METHOD = method.value
         self.model_path = model_path
+        
+        self.fmts = [fmt.name for fmt in self.formats]
+
 
     def _prepare(
         self,
@@ -156,13 +182,14 @@ class WADIQAM:
         distorted: Optional[vs.VideoNode] = None
     ) -> tuple[vs.VideoNode, vs.VideoNode] | tuple[vs.VideoNode, None]:
 
-        # pad with black bars?
-        pad = [mod_x(i, 32) for i in (reference.width, reference.height)]
-        prepared_reference = reference.resize.Lanczos(width=pad[0], height=pad[1])
+        if reference.width or reference.height % 32 != 0:
+            # pad with black bars?
+            pad = [mod_x(i, 32) for i in (reference.width, reference.height)]
+            prepared_reference = reference.resize.Lanczos(width=pad[0], height=pad[1])
 
-        if distorted is not None:
-            prepared_distorted = distorted.resize.Lanczos(width=pad[0], height=pad[1])
-            return prepared_reference, prepared_distorted
+            if distorted is not None:
+                prepared_distorted = distorted.resize.Lanczos(width=pad[0], height=pad[1])
+                return prepared_reference, prepared_distorted
 
         return prepared_reference, None
 
@@ -174,6 +201,9 @@ class WADIQAM:
 
         if self.model_path is None:
             raise ValueError("model_path is required for WADIQAM calculations.")
+
+        validate_format(reference, self.formats, self.fmts)
+        validate_format(distorted, self.formats, self.fmts)
 
         prepared_reference, prepared_distorted = self._prepare(
             reference, distorted

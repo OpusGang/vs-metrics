@@ -1,22 +1,21 @@
 from datetime import datetime
 import os
-from os import PathLike
-from vskernels import Catrom
 from vstools import vs, core, clip_async_render
 from pathlib import Path
-#from .util import format_handler
+from .util import validate_format
 
 class VMAFMetric:
-    safe: bool = True
     feature_id: None | int = None
-    formats: list[int] = [
+    formats: tuple[int] = (
         vs.YUV410P12,
         vs.YUV420P12,
         vs.YUV422P12,
         vs.YUV444P12
-    ]
-
+    )
+    
     def __init__(self):
+        self.fmts = [fmt.name for fmt in self.formats]
+
         if self.feature_id is None:
             raise ValueError("feature_id must be defined in subclass")
 
@@ -29,14 +28,14 @@ class VMAFMetric:
             distorted (vs.VideoNode): The distorted video node.
 
         Returns:
-            vs.VideoNode: A new video node with the calculated scores.
+            distorted (vs.VideoNode) with frame props
 
         Raises:
             ValueError: If one of the inputs has an unsupported format.
             """
-        for input in (reference, distorted):
-            if input.format.id not in VMAFMetric.formats:
-                raise ValueError(f"Expected {self.formats} but got {input.format.name}")
+
+        validate_format(reference, self.formats, self.fmts)
+        validate_format(distorted, self.formats, self.fmts)
 
         return core.vmaf.Metric(reference=reference, distorted=distorted, feature=self.feature_id)
 
@@ -82,7 +81,6 @@ class CAMBI:
         self.tvi_threshold = tvi_threshold
         self.scaling = scaling
         self.cambi = None
-
 
     def calculate(self, reference: vs.VideoNode) -> vs.VideoNode:
         """
