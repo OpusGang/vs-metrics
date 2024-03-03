@@ -1,5 +1,5 @@
-from dataclasses import dataclass
 from enum import Enum
+from functools import partial
 from os import PathLike
 from typing import Optional
 from vstools import split, vs, core, mod_x, merge_clip_props
@@ -29,7 +29,7 @@ class GMSD:
 
     def map(self):
         return self.object[1]
-    
+
 # https://github.com/WolframRhodium/muvsfunc/issues/59
 class MDSI:
     def __init__(self, resolution_scale: float = 1.0, alpha: float = 0.6):
@@ -49,7 +49,7 @@ class MDSI:
             )
         
         return self.object[0]
-    
+
     def gradient_map(self) -> vs.VideoNode:
         return self.object[1]
 
@@ -58,7 +58,6 @@ class MDSI:
 
     def gradient_chromaticity_map(self) -> vs.VideoNode:
         return self.object[3]
-
 
 # https://github.com/WolframRhodium/muvsfunc/issues/59
 class SSIM_Alt:
@@ -96,23 +95,48 @@ class SSIM_Alt:
             )
         
         return self.object
-        #tmp = self.dist = self.dist.std.RemoveFrameProps(["_Matrix", "_ColorRange"])
-        #return merge_clip_props(tmp, self.object)
-    
+
     #def map(self) -> vs.VideoNode:
     #    return merge_clip_props(self.object, self.dist)
 
 
-@dataclass
 class PSNR_Alt:
+    def __init__(self, weights: bool | list[float] = False):
+        self.weights = False
+        self._reference = None
 
-    _reference = None
+        # RGB: BT.709
+        # HVS: vmaf third_party/xiph/psnr_hvs.c
 
-    def __post_init__(self):
-        self._set_reference(self._reference)
+        self.cie = dict(
+            RGB = [0.299, 0.587, 0.114],
+            YCbCr = [0.7, 0.15, 0.15],
+            PSNR_HVS = [0.8, 0.1, 0.1]
+        )
 
     def _set_reference(self, reference: vs.VideoNode):
         self._reference = reference
+
+        if self.weights == True:
+            if reference.format.color_family == vs.YUV:
+                self.weights = self.cie['YCbCr']
+            elif reference.format.color_family == vs.RGB:
+                self.weights = self.cie['RGB']
+            elif reference.format.num_planes == 0:
+                self.weights = False
+
+    def set_prop(self, n, f, props):
+        fout = f.copy()
+
+        r = fout.props[props[0]]
+        g = fout.props[props[1]]
+        b = fout.props[props[2]]
+
+        fout.props['psnr'] = 10 * np.log10((255 ** 2) * sum(
+            w / (10 ** (p / 10)) for w, p in zip(self.weights, [r, g, b])
+        ))
+
+        return fout
 
     @property
     def props(self) -> list[str]:
@@ -138,7 +162,16 @@ class PSNR_Alt:
             for i, j, k in zip(split(reference), split(distorted), self.props)
         ]
 
-        return merge_clip_props(distorted, *metric)
+        metric = merge_clip_props(distorted, *metric)
+
+        if self.weights != False and reference.format != vs.GRAY:
+            return core.std.ModifyFrame(
+                clip=metric,
+                clips=metric,
+                selector=partial(self.set_prop, props=self.props)
+                )
+
+        return metric
 
 
 class WADIQAM:
@@ -172,9 +205,6 @@ class WADIQAM:
         self.DATASET = dataset.value
         self.EVALUATION_METHOD = method.value
         self.model_path = model_path
-        
-        self.fmts = [fmt.name for fmt in self.formats]
-
 
     def _prepare(
         self,
@@ -202,8 +232,8 @@ class WADIQAM:
         if self.model_path is None:
             raise ValueError("model_path is required for WADIQAM calculations.")
 
-        validate_format(reference, self.formats, self.fmts)
-        validate_format(distorted, self.formats, self.fmts)
+        validate_format(reference, self.formats)
+        validate_format(distorted, self.formats)
 
         prepared_reference, prepared_distorted = self._prepare(
             reference, distorted
