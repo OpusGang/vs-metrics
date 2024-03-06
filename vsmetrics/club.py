@@ -11,7 +11,7 @@ class GMSD:
         self.plane = plane
         self.downsample = downsample
         self.c = c
-        self.object: list[vs.VideoNode] = None
+        self.object: list[vs.VideoNode] = None  # type: ignore
 
     def calculate(self, img1: vs.VideoNode, img2: vs.VideoNode) -> vs.VideoNode:
         from muvsfunc import GMSD as _GMSD
@@ -22,8 +22,8 @@ class GMSD:
             self.plane,
             self.downsample,
             self.c,
-            self.show_map
-            )
+            self.show_map # type: ignore
+            )  # type: ignore
         
         return self.object[0]
 
@@ -35,7 +35,7 @@ class MDSI:
     def __init__(self, resolution_scale: float = 1.0, alpha: float = 0.6):
         self.down_scale = resolution_scale
         self.alpha = alpha
-        self.object: list[vs.VideoNode] = None
+        self.object: None | list[vs.VideoNode] = None
 
     def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode) -> vs.VideoNode:
         from muvsfunc import MDSI as _MDSI
@@ -43,21 +43,21 @@ class MDSI:
         self.object = _MDSI(
             reference,
             distorted,
-            self.down_scale,
+            self.down_scale, # type: ignore
             self.alpha,
             show_maps=True
-            )
+            ) 
         
         return self.object[0]
 
     def gradient_map(self) -> vs.VideoNode:
-        return self.object[1]
+        return self.object[1]  # type: ignore
 
     def chromaticity_map(self) -> vs.VideoNode:
-        return self.object[2]
+        return self.object[2]  # type: ignore
 
     def gradient_chromaticity_map(self) -> vs.VideoNode:
-        return self.object[3]
+        return self.object[3]  # type: ignore
 
 # https://github.com/WolframRhodium/muvsfunc/issues/59
 class SSIM_Alt:
@@ -70,7 +70,7 @@ class SSIM_Alt:
         self.k1 = k1
         self.k2 = k2
         self.dynamic_range = dynamic_range
-        self.object: list[vs.VideoNode] = None
+        self.object: None | list[vs.VideoNode] = None
         
         self.dist = None
 
@@ -82,65 +82,99 @@ class SSIM_Alt:
         from muvsfunc import SSIM as _SSIM
 
         self.dist = reference
-        
+
         self.object = _SSIM(
             reference,
             distorted,
             self.down_scale,
-            self.plane,
+            self.plane,  # type: ignore
             self.k1,
             self.k2,
-            self.dynamic_range,
+            self.dynamic_range,  # type: ignore
             show_map=False
-            )
+            )  # type: ignore
         
         return self.object
 
     #def map(self) -> vs.VideoNode:
     #    return merge_clip_props(self.object, self.dist)
 
+class PSNR:
+    def __init__(
+        self,
+        weights: bool | list[float] = False,
+        opt: int = 0,
+        cache: int = 1
+    ):
+        """
+        Initializes the PSNR object.
 
-class PSNR_Alt:
-    def __init__(self, weights: bool | list[float] = False):
-        self.weights = False
+        Args:
+            weights (bool | list[float], optional): Weights for calculating the weighted average of PSNR values.
+                - If False (default), no weights are applied.
+                - If True, weights are automatically determined based on the color family of the reference clip.
+                - If a list of floats is provided, the weights are used as specified.
+                The length of the weights list should match the number of planes in the reference clip.
+            opt (int, optional): Optimization level.
+                - 0: Auto-detect (default)
+                - 1: AVX
+                - 2: AVX2
+            cache (int, optional): Whether the output should be cached or not. Disabling cache may slightly improve performance.
+                If you want to access the results later, it's recommended to enable caching.
+                - 0: Disable caching
+                - 1: Enable caching (default)
+        """
+        self.weights = weights
         self._reference = None
+        self.opt = opt
+        self.cache = cache
 
         # RGB: BT.709
         # HVS: vmaf third_party/xiph/psnr_hvs.c
 
         self.cie = dict(
-            RGB = [0.299, 0.587, 0.114],
-            YCbCr = [0.7, 0.15, 0.15],
-            PSNR_HVS = [0.8, 0.1, 0.1]
+            RGB=[0.299, 0.587, 0.114],
+            YCbCr=[0.7, 0.15, 0.15],
+            PSNR_HVS=[0.8, 0.1, 0.1]
         )
 
-    def _set_reference(self, reference: vs.VideoNode):
+    def _set_reference(self, reference: vs.VideoNode) -> None:
         self._reference = reference
 
         if self.weights == True:
-            if reference.format.color_family == vs.YUV:
+            if reference.format.color_family == vs.YUV:  # type: ignore
                 self.weights = self.cie['YCbCr']
-            elif reference.format.color_family == vs.RGB:
+            elif reference.format.color_family == vs.RGB:  # type: ignore
                 self.weights = self.cie['RGB']
-            elif reference.format.num_planes == 0:
+            elif reference.format.num_planes == 1:  # type: ignore
+                self.weights = [1.0]
+            else:
                 self.weights = False
 
     def set_prop(self, n, f, props):
         fout = f.copy()
 
-        r = fout.props[props[0]]
-        g = fout.props[props[1]]
-        b = fout.props[props[2]]
+        planes = [fout.props.get(prop) for prop in props]
+        available_planes = [plane for plane in planes if plane is not None]
 
-        fout.props['psnr'] = 10 * np.log10((255 ** 2) * sum(
-            w / (10 ** (p / 10)) for w, p in zip(self.weights, [r, g, b])
-        ))
+        if not available_planes:
+            fout.props['psnr'] = None
+            return fout
+
+        if len(available_planes) == 1:
+            fout.props['psnr'] = available_planes[0]
+        else:
+            weights = [self.weights[i] for i, plane in enumerate(planes) if plane is not None]  # type: ignore
+            weight_sum = sum(weights)
+            normalized_weights = [weight / weight_sum for weight in weights]
+            psnr = sum(weight * plane for weight, plane in zip(normalized_weights, available_planes))
+            fout.props['psnr'] = psnr
 
         return fout
 
     @property
     def props(self) -> list[str]:
-        color_family = self._reference.format.color_family
+        color_family = self._reference.format.color_family  # type: ignore
 
         props = {
             vs.YUV: ["psnr_y", "psnr_cb", "psnr_cr"],
@@ -153,30 +187,61 @@ class PSNR_Alt:
 
         return props
 
-    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode) -> vs.VideoNode:
+    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode, planes: None | int | list[int] = None) -> vs.VideoNode:
+        """
+        Calculates the Plane Peak Signal-to-Noise Ratio (PSNR) between two clips and stores the result in the frame properties of the output clip.
 
+        Args:
+            reference (vs.VideoNode): The reference clip.
+            distorted (vs.VideoNode): The distorted clip to compare against the reference.
+            planes (None | int | list[int], optional): The planes to calculate the PSNR for.
+                - If None (default), PSNR is calculated for all planes.
+                - If an integer is provided, PSNR is calculated for the specified plane index.
+                - If a list of integers is provided, PSNR is calculated for the specified plane indices.
+
+        Returns:
+            vs.VideoNode: The output clip with the PSNR scores stored in the frame properties.
+            - If no weights are specified, the frame properties 'psnr_y', 'psnr_cb', 'psnr_cr' (for YUV), 'psnr_r', 'psnr_g', 'psnr_b' (for RGB),
+              or 'psnr_gray' (for GRAY) contain the PSNR values for each plane.
+            - If weights are specified an additional frame property 'psnr' which contains the weighted average of the PSNR values.
+
+        Raises:
+            ValueError: If the color family of the reference clip is not supported.
+
+        Notes:
+            - Both input clips must have the same format and dimensions.
+            - Both 8-16 bit integer and float sample types are allowed.
+        """
         self._set_reference(reference)
 
+        if planes is None:
+            planes = list(range(reference.format.num_planes))  # type: ignore
+        elif isinstance(planes, int):
+            planes = [planes]
+
+        ref = split(reference)
+        dist = split(distorted)
+
         metric = [
-            core.complane.PSNR(i, j, propname=k)
-            for i, j, k in zip(split(reference), split(distorted), self.props)
+            core.complane.PSNR(ref[i], dist[i], self.props[i], self.opt, self.cache)
+            for i in planes
         ]
 
         metric = merge_clip_props(distorted, *metric)
 
-        if self.weights != False and reference.format != vs.GRAY:
+        if self.weights:
             return core.std.ModifyFrame(
                 clip=metric,
                 clips=metric,
-                selector=partial(self.set_prop, props=self.props)
-                )
+                selector=partial(self.set_prop, props=[self.props[i] for i in planes])
+            )
 
         return metric
 
 
 class WADIQAM:
     MAX_BATCH_SIZE = 2040
-    formats: tuple[int] = (
+    formats: tuple[int, ...] = (
         vs.RGB24,
         vs.RGB30,
         vs.RGB48,
@@ -193,9 +258,9 @@ class WADIQAM:
         
     def __init__(
         self,
-        dataset: str = Dataset.TID,
-        method: str = EvaluationMethod.PATCHWISE,
-        model_path: PathLike = None,
+        dataset: Dataset = Dataset.TID,
+        method: EvaluationMethod = EvaluationMethod.PATCHWISE,
+        model_path: None | PathLike = None,
     ) -> None:
 
         from vs_wadiqam_chainer import wadiqam_fr, wadiqam_nr
@@ -233,7 +298,9 @@ class WADIQAM:
             raise ValueError("model_path is required for WADIQAM calculations.")
 
         validate_format(reference, self.formats)
-        validate_format(distorted, self.formats)
+        
+        if distorted:
+            validate_format(distorted, self.formats)
 
         prepared_reference, prepared_distorted = self._prepare(
             reference, distorted

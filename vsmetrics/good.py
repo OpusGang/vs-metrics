@@ -1,13 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
-from vstools import DitherType, Transfer, merge_clip_props, vs, core, Matrix
-from vsdysfunctional import calc_diff
-
-class Provider(Enum):
-    SSIMULACRA1 = 0
-    SSIMULACRA2 = 1
-    SSIMULACRA2_ZIG = 2
-
+from vstools import vs, core
+from .util import validate_format
 
 class SSIMULACRA:
     """Calculator for SSIMULACRA scores using different providers.
@@ -22,6 +16,15 @@ class SSIMULACRA:
         calculate(): Estimate the SSIMULACRA score based on the selected provider.
     """
 
+    class Provider(Enum):
+        SSIMULACRA1 = 0
+        SSIMULACRA2 = 1
+        SSIMULACRA2_ZIG = 2
+
+    formats: tuple[int] = (
+        vs.RGBS
+    ) # type: ignore
+
     METHODS = {
         Provider.SSIMULACRA1: lambda reference, distorted: core.julek.SSIMULACRA(reference, distorted, feature=0),
         Provider.SSIMULACRA2: lambda reference, distorted: core.julek.SSIMULACRA(reference, distorted, feature=1),
@@ -29,6 +32,7 @@ class SSIMULACRA:
     }
 
     def __init__(self, provider: Provider):
+
         if provider not in self.METHODS:
             raise ValueError("Unknown provider")
 
@@ -42,7 +46,7 @@ class SSIMULACRA:
         Returns:
             vs.VideoNode: Score map containing the estimated SSIMULACRA score.
         Raises:
-            ValueError: If any of the inputs has an incorrect pixel format (not RGSB).
+            ValueError: If any of the inputs has an incorrect pixel format (not RGBS).
         Example usage:
             >>> calc_result = SSIMULACRA(Provider.SSIMULACRA2_ZIG).calculate(src, enc)
         Additional Notes:
@@ -52,9 +56,12 @@ class SSIMULACRA:
         """
         method = self.METHODS[self.provider]
         
-        for input in (reference, distorted):
-            if input.format.id != vs.RGBS:
-                raise ValueError(f"Expected {vs.RGBS} but got {input.format.name}")
+        validate_format(reference, self.formats)
+        validate_format(distorted, self.formats)
+
+        #for input in (reference, distorted):
+        #    if input.format.id != vs.RGBS:
+        #        raise ValueError(f"Expected {vs.RGBS} but got {input.format.name}")
 
         #reference = reference.resize.Bicubic(format=vs.RGBS, matrix_in=Matrix.BT709)
         #distorted = distorted.resize.Bicubic(format=vs.RGBS, matrix_in=Matrix.BT709)
@@ -117,7 +124,7 @@ class BUTTERAUGLI:
         return core.julek.Butteraugli(
             reference=reference,
             distorted=distorted,
-            distmap=self.dist,
+            distmap=self.distmap,
             intensity_target=self.intensity_target,
             linput=self.linput
             )

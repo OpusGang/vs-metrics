@@ -10,6 +10,7 @@ class PlaneStatistics:
         self.mad = False
         self.var = False
         self.std = False
+        self.mae = False
         self.rms = False
         self.psnr = False
         self.cov = False
@@ -44,7 +45,7 @@ class PlaneStatistics:
             self.var,
             self.std,
             self.rms
-        )
+        ) # type: ignore
     
     def mean(self):
         self.meany = True
@@ -69,7 +70,7 @@ class PlaneStatistics:
 
 
 class VisualizeDiffs:
-    formats: tuple[int] = (
+    formats: tuple[int, ...] = (
         vs.YUV410P8,
         vs.YUV420P8,
         vs.YUV422P8,
@@ -81,12 +82,11 @@ class VisualizeDiffs:
     def __init__(self, auto_gain: bool = True, type: ColormapTypes = ColormapTypes.JET):
         self.auto_gain = auto_gain
         self.type = type
-        self.fmts = [fmt.name for fmt in self.formats]
-    
+
     def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode) -> vs.VideoNode:
-        
-        validate_format(reference, self.formats, self.fmts)
-        validate_format(distorted, self.formats, self.fmts)
+
+        validate_format(reference, self.formats)
+        validate_format(distorted, self.formats)
 
         return core.julek.VisualizeDiffs(
             reference,
@@ -97,10 +97,19 @@ class VisualizeDiffs:
 
 
 class ColorMap:
-    formats: vs.GRAY8
+    formats: tuple[int, ...] = (
+        vs.YUV410P8,
+        vs.YUV420P8,
+        vs.YUV422P8,
+        vs.YUV444P8,
+        vs.GRAY8,
+        vs.RGB24,
+    )
 
-    def __init__(self, type: ColormapTypes = ColormapTypes.AUTUMN):
+    def __init__(self, type: ColormapTypes = ColormapTypes.JET):
         self.type = type
 
     def calculate(self, reference: vs.VideoNode) -> vs.VideoNode:
+        validate_format(reference, self.formats)
+
         return core.julek.ColorMap(reference, type=self.type.value)

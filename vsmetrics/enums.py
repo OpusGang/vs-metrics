@@ -2,7 +2,9 @@
 from enum import Enum
 
 class MatrixFMTC(Enum):
+    """String enums representing various matrix types for color space conversions."""
     
+    # Predefined matrix for conversions to and from R'G'B'. The direction is deduced from the specified input and output colorspaces.
     BT601 = '601'      # ITU-R BT.601 / ITU-R BT.470-2 / SMPTE 170M. For Standard Definition content.
     BT709 = '709'      # ITU-R BT.709. For High Definition content.
     BT2020 = '2020'   # ITU-R BT.2020 and ITU-R BT.2100, non constant luminance mode. For UHDTV content.
@@ -15,6 +17,7 @@ class MatrixFMTC(Enum):
     YDzDx = 'YDzDx'   # Y’D’ZD’X, SMPTE ST 2085
     RGB = 'RGB'       # R’G’B’, Identity, no cross-plane calculations.
     
+    # Source and destination matrices for YUV. Use both when you want to do a conversion between BT.601 and BT.709.
     LMS = 'LMS'        # Intermediate colorspace for ICTCP transforms. The LMS colorspace is conveyed on RGB planes.
     ICtCp_PQ = 'ICtCp_PQ'  # ITU-R BT.2100-2 ICTCP with perceptual quantization (PQ).
     ICtCp_HLG = 'ICtCp_HLG'  # ITU-R BT.2100-2 ICTCP with hybrid log-gamma transfer function (HLG).
@@ -72,7 +75,6 @@ class PrimariesFMTC(Enum):
             "B": self.b,
             "W": self.w
         }
-
 
 class TransferFMTC(Enum):
     pass

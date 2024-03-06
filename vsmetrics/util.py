@@ -1,11 +1,16 @@
 from vstools import vs, core
+import numpy as np
 
-def validate_format(clip: vs.VideoNode, formats: tuple[int], fmts: list[str]) -> None:
-    if clip.format.id not in formats:
-        raise ValueError(f"Expected formats {fmts} but got {clip.format.name}")
+def validate_format(input: vs.VideoNode, formats: tuple[int, ...] | int):
+    if isinstance(formats, int):
+        formats = (formats,)
 
+    fmts = [fmt.name for fmt in formats] # type: ignore
 
-class ReductionMode:
+    if input.format.id not in formats: # type: ignore
+        raise ValueError(f"Expected {fmts} but got {input.format.name}") # type: ignore
+
+class ReductionMode:    
     class Crop:
         def __init__(self, percentage: int = 25):   
             self.percentage = percentage
@@ -21,8 +26,8 @@ class ReductionMode:
 def pre_process(
     reference: vs.VideoNode,
     distorted: vs.VideoNode,
-    reduce: ReductionMode = ReductionMode.Crop
-    ) -> vs.VideoNode:
+    reduce: ReductionMode = ReductionMode.Crop, # type: ignore
+    ) -> [vs.VideoNode, vs.VideoNode]: # type: ignore
     
     if reduce:
         if isinstance(reduce, ReductionMode.Crop):
@@ -84,5 +89,5 @@ def pre_process(
         
             reference = core.std.Interleave(ref_clips)
             distorted = core.std.Interleave(dis_clips)
-
-            return distorted
+            
+            return reference, distorted  # type: ignore

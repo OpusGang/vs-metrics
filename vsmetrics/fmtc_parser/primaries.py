@@ -38,7 +38,6 @@ def parse_c_to_python(c_code):
     return parsed_data
 
 
-# Example C code
 c_code = """
 	case PrimariesPreset_BT709:
 		_rgb [0] = { 0.640 , 0.330  };

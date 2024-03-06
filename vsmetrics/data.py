@@ -6,6 +6,8 @@ from warnings import warn
 import pandas as pd
 import matplotlib.pyplot as plt
 from vstools import merge_clip_props, vs, core, clip_async_render, clip_data_gather, SceneChangeMode, SceneBasedDynamicCache
+from vsdysfunctional import CSVPropThing
+
 
 class CSVHandler:
     def __init__(self, filepath):
@@ -14,7 +16,7 @@ class CSVHandler:
     def read_csv(self):
         return pd.read_csv(self.filepath)
     
-    def write_csv(
+    def write_csv(  
         self,
         clip: vs.VideoNode,
         overwrite: bool = False,

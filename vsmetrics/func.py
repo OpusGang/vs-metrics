@@ -1,11 +1,35 @@
 # find offset
 # find desync point
 
+from os import PathLike
 from typing import Any
 from vsexprtools import ExprOp, combine
 from vskernels import Catrom
-from vstools import Matrix, MatrixT, merge_clip_props, vs, core, depth
- 
+from vstools import DitherType, Matrix, MatrixT, Transfer, TransferT, merge_clip_props, vs, core, depth
+
+from .good import SSIMULACRA, BUTTERAUGLI
+from .club import PSNR, MDSI, GMSD, SSIM_Alt, WADIQAM
+from .util import ReductionMode, pre_process
+
+
+def compare(
+    reference: vs.VideoNode,
+    distorted: vs.VideoNode,
+    metric = PSNR(weights=True),
+    preprocess = ReductionMode.Hybrid(chunks=4),
+    matrix: MatrixT = Matrix.BT709,
+    transfer: TransferT = Transfer.BT709,
+) -> vs.VideoNode:
+    
+    if isinstance(metric, list) is False:
+        metric = [metric]
+    
+    if preprocess:
+        reference, distorted = pre_process(reference, distorted, preprocess)  # type: ignore
+    
+    raise NotImplementedError
+
+
 def banding_mask(
     clip: vs.VideoNode,
     scale: int = 2,
@@ -23,7 +47,7 @@ def banding_mask(
  
     cambi_args = dict(topk=0.1, tvi_threshold=0.012) | cambi_args
  
-    if clip.format.bits_per_sample > 10:
+    if clip.format.bits_per_sample > 10:  # type: ignore
         clip = depth(clip, 10)
  
     cambi = core.akarin.Cambi(clip, scores=True, **cambi_args)
