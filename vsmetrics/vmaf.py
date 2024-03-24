@@ -39,11 +39,17 @@ class VMAFMetric:
         return core.vmaf.Metric(reference=reference, distorted=distorted, feature=self.feature_id)  # type: ignore
 
 
+# add as fallback or something
+# less CPU but less throughput
+
+#class PSNR(VMAFMetric):
+#    feature_id = 0
+
 class PSNRHVS(VMAFMetric):
     feature_id = 1
 
-class SSIM(VMAFMetric):
-    feature_id = 2
+#class SSIM(VMAFMetric):
+#    feature_id = 2
 
 class MSSSIM(VMAFMetric):
     feature_id = 3

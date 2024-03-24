@@ -3,9 +3,9 @@ from functools import partial
 from os import PathLike
 from typing import Optional
 from vstools import split, vs, core, mod_x, merge_clip_props
-from .util import validate_format
+from .util import validate_format, name
 
-# https://github.com/WolframRhodium/muvsfunc/issues/59
+
 class GMSD:
     def __init__(self, plane: None | int = None, downsample: bool = True, c: float = 0.0026):
         self.plane = plane
@@ -27,20 +27,20 @@ class GMSD:
         
         return self.object[0]
 
-    def map(self):
+    def gradient_map(self) -> vs.VideoNode:
         return self.object[1]
 
-# https://github.com/WolframRhodium/muvsfunc/issues/59
+
 class MDSI:
     def __init__(self, resolution_scale: float = 1.0, alpha: float = 0.6):
         self.down_scale = resolution_scale
         self.alpha = alpha
-        self.object: None | list[vs.VideoNode] = None
+        self.object: vs.VideoNode
 
     def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode) -> vs.VideoNode:
         from muvsfunc import MDSI as _MDSI
 
-        self.object = _MDSI(
+        measure = _MDSI(
             reference,
             distorted,
             self.down_scale, # type: ignore
@@ -48,31 +48,38 @@ class MDSI:
             show_maps=True
             ) 
         
-        return self.object[0]
+        self.object = core.std.ClipToProp(distorted, measure[1], prop="gradient_map")
+        self.object = core.std.ClipToProp(self.object, measure[2], prop="chromaticity_map")
+        self.object = core.std.ClipToProp(self.object, measure[3], prop="gradient_chromaticity_map")
 
+        return self.object
+        
     def gradient_map(self) -> vs.VideoNode:
-        return self.object[1]  # type: ignore
+        mask = core.std.PropToClip(self.object, "gradient_map")
+        return mask.std.RemoveFrameProps("_Matrix")
 
     def chromaticity_map(self) -> vs.VideoNode:
-        return self.object[2]  # type: ignore
+        mask = core.std.PropToClip(self.object, "chromaticity_map")
+        return mask.std.RemoveFrameProps("_Matrix")
 
     def gradient_chromaticity_map(self) -> vs.VideoNode:
-        return self.object[3]  # type: ignore
+        mask = core.std.PropToClip(self.object, "gradient_chromaticity_map")
+        return mask.std.RemoveFrameProps("_Matrix")
 
-# https://github.com/WolframRhodium/muvsfunc/issues/59
-class SSIM_Alt:
+
+class SSIM:
     def __init__(
         self, plane: Optional[int] = None, downsample: bool = True,
         k1: float = 0.01, k2: float = 0.03, dynamic_range: int = 1
         ):
+
         self.plane = plane
         self.down_scale = downsample
+        self.dynamic_range = dynamic_range
         self.k1 = k1
         self.k2 = k2
-        self.dynamic_range = dynamic_range
-        self.object: None | list[vs.VideoNode] = None
         
-        self.dist = None
+        self.object: vs.VideoNode
 
     def calculate(
         self,
@@ -80,8 +87,6 @@ class SSIM_Alt:
         distorted: vs.VideoNode
     ) -> vs.VideoNode:
         from muvsfunc import SSIM as _SSIM
-
-        self.dist = reference
 
         self.object = _SSIM(
             reference,
@@ -91,14 +96,18 @@ class SSIM_Alt:
             self.k1,
             self.k2,
             self.dynamic_range,  # type: ignore
-            show_map=False
+            show_map=True
             )  # type: ignore
         
+        return distorted.std.CopyFrameProps(
+            self.object, props="PlaneSSIM"
+        )
+
+    def map(self) -> vs.VideoNode:
         return self.object
 
-    #def map(self) -> vs.VideoNode:
-    #    return merge_clip_props(self.object, self.dist)
 
+@name
 class PSNR:
     def __init__(
         self,
@@ -146,29 +155,28 @@ class PSNR:
                 self.weights = self.cie['YCbCr']
             elif reference.format.color_family == vs.RGB:  # type: ignore
                 self.weights = self.cie['RGB']
-            elif reference.format.num_planes == 1:  # type: ignore
-                self.weights = [1.0]
             else:
                 self.weights = False
 
     def set_prop(self, n, f, props):
         fout = f.copy()
-
-        planes = [fout.props.get(prop) for prop in props]
-        available_planes = [plane for plane in planes if plane is not None]
-
-        if not available_planes:
-            fout.props['psnr'] = None
-            return fout
-
-        if len(available_planes) == 1:
-            fout.props['psnr'] = available_planes[0]
-        else:
-            weights = [self.weights[i] for i, plane in enumerate(planes) if plane is not None]  # type: ignore
-            weight_sum = sum(weights)
-            normalized_weights = [weight / weight_sum for weight in weights]
-            psnr = sum(weight * plane for weight, plane in zip(normalized_weights, available_planes))
-            fout.props['psnr'] = psnr
+    
+        psnr_values = []
+        plane_weights = []
+    
+        for i, prop in enumerate(props):
+            psnr = fout.props.get(prop)
+            if psnr is not None:
+                psnr_values.append(psnr)
+                plane_weights.append(self.weights[i])  # type: ignore
+    
+        weight_sum = sum(plane_weights)
+        normalized_weights = [weight / weight_sum for weight in plane_weights]
+    
+        fout.props['psnr'] = (
+            sum(weight * psnr for weight, psnr in zip(normalized_weights, psnr_values))
+            if weight_sum != 0 else None
+        )
 
         return fout
 
@@ -186,6 +194,24 @@ class PSNR:
             raise ValueError(f"Invalid color format: {color_family}")
 
         return props
+
+    def get_props(self) -> list[str]:
+        color_family = self._reference.format.color_family  # type: ignore
+
+        props = {
+            vs.YUV: ["psnr_y", "psnr_cb", "psnr_cr"],
+            vs.RGB: ["psnr_r", "psnr_g", "psnr_b"],
+            vs.GRAY: ["psnr_gray"],
+        }.get(color_family, ["psnr_invalid"])
+
+        if props == ["psnr_invalid"]:
+            raise ValueError(f"Invalid color format: {color_family}")
+
+        if self.weights:
+            props.append('psnr')
+
+        return props
+
 
     def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode, planes: None | int | list[int] = None) -> vs.VideoNode:
         """
@@ -237,6 +263,9 @@ class PSNR:
             )
 
         return metric
+
+    def __call__(self, reference: vs.VideoNode, distorted: vs.VideoNode, planes: None | int | list[int] = None) -> vs.VideoNode:
+        return self.calculate(reference, distorted, planes)
 
 
 class WADIQAM:

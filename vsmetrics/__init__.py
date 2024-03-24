@@ -5,3 +5,4 @@ from .vmaf import *
 from .good import *
 from .club import *
 from .ugly import *
+from .colour import *

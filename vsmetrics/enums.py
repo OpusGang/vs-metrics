@@ -103,3 +103,11 @@ class ColormapTypes(Enum):
     TWILIGHT_SHIFTED = 19
     TURBO = 20
     DEEPGREEN = 21
+
+
+class ColourSpace(Enum):
+    INPUT = 0
+    GAMMA = 1
+    LINEAR = 2
+    PERCEPTUAL = 3
+    OKLAB = 4

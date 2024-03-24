@@ -1,5 +1,18 @@
-from vstools import vs, core
+from vstools import Transfer, vs, core
 import numpy as np
+from .enums import ColourSpace
+
+def name(cls):
+    if 'name' not in cls.__dict__:
+        setattr(cls, 'name', property(lambda self: self.__class__.__name__))
+
+    return cls
+
+def convet_model(clip: vs.VideoNode, space: ColourSpace = ColourSpace.LINEAR) -> vs.VideoNode:
+    if space is ColourSpace.LINEAR:
+        return clip.resize.Point(transfer=Transfer.LINEAR)
+    else:
+        return clip
 
 def validate_format(input: vs.VideoNode, formats: tuple[int, ...] | int):
     if isinstance(formats, int):
@@ -9,6 +22,7 @@ def validate_format(input: vs.VideoNode, formats: tuple[int, ...] | int):
 
     if input.format.id not in formats: # type: ignore
         raise ValueError(f"Expected {fmts} but got {input.format.name}") # type: ignore
+
 
 class ReductionMode:    
     class Crop:

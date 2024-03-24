@@ -3,6 +3,7 @@ from enum import Enum
 from vstools import vs, core
 from .util import validate_format
 
+# ADD LUMA BIAS FOR DARK
 class SSIMULACRA:
     """Calculator for SSIMULACRA scores using different providers.
     Supported providers include:

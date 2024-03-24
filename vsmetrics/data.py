@@ -6,7 +6,6 @@ from warnings import warn
 import pandas as pd
 import matplotlib.pyplot as plt
 from vstools import merge_clip_props, vs, core, clip_async_render, clip_data_gather, SceneChangeMode, SceneBasedDynamicCache
-from vsdysfunctional import CSVPropThing
 
 
 class CSVHandler:
