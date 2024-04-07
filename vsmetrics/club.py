@@ -2,7 +2,7 @@ from enum import Enum
 from functools import partial
 from os import PathLike
 from typing import Optional
-from vstools import split, vs, core, mod_x, merge_clip_props
+from vstools import padder, split, vs, core, mod_x, merge_clip_props
 from .util import validate_format, name
 
 
@@ -13,19 +13,19 @@ class GMSD:
         self.c = c
         self.object: list[vs.VideoNode] = None  # type: ignore
 
-    def calculate(self, img1: vs.VideoNode, img2: vs.VideoNode) -> vs.VideoNode:
+    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode) -> vs.VideoNode:
         from muvsfunc import GMSD as _GMSD
 
         self.object = _GMSD(
-            img1,
-            img2,
+            reference,
+            distorted,
             self.plane,
             self.downsample,
             self.c,
-            self.show_map # type: ignore
+            True # type: ignore
             )  # type: ignore
         
-        return self.object[0]
+        return core.std.CopyFrameProps(distorted, prop_src=self.object)
 
     def gradient_map(self) -> vs.VideoNode:
         return self.object[1]
@@ -52,19 +52,19 @@ class MDSI:
         self.object = core.std.ClipToProp(self.object, measure[2], prop="chromaticity_map")
         self.object = core.std.ClipToProp(self.object, measure[3], prop="gradient_chromaticity_map")
 
-        return self.object
+        return core.std.CopyFrameProps(self.object, measure, "FrameMDSI")
         
     def gradient_map(self) -> vs.VideoNode:
         mask = core.std.PropToClip(self.object, "gradient_map")
-        return mask.std.RemoveFrameProps("_Matrix")
+        return mask.std.RemoveFrameProps("_Matrix").std.Limiter(0, 1)
 
     def chromaticity_map(self) -> vs.VideoNode:
         mask = core.std.PropToClip(self.object, "chromaticity_map")
-        return mask.std.RemoveFrameProps("_Matrix")
+        return mask.std.RemoveFrameProps("_Matrix").std.Limiter(0, 1)
 
     def gradient_chromaticity_map(self) -> vs.VideoNode:
         mask = core.std.PropToClip(self.object, "gradient_chromaticity_map")
-        return mask.std.RemoveFrameProps("_Matrix")
+        return mask.std.RemoveFrameProps("_Matrix").std.Limiter(0, 1)
 
 
 class SSIM:
@@ -92,7 +92,7 @@ class SSIM:
             reference,
             distorted,
             self.down_scale,
-            self.plane,  # type: ignore
+            False,  # type: ignore
             self.k1,
             self.k2,
             self.dynamic_range,  # type: ignore
@@ -289,7 +289,7 @@ class WADIQAM:
         self,
         dataset: Dataset = Dataset.TID,
         method: EvaluationMethod = EvaluationMethod.PATCHWISE,
-        model_path: None | PathLike = None,
+        model_path: None = None
     ) -> None:
 
         from vs_wadiqam_chainer import wadiqam_fr, wadiqam_nr

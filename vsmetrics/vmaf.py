@@ -1,24 +1,23 @@
-from dataclasses import dataclass
 from datetime import datetime
 import os
 from vstools import vs, core, clip_async_render
 from pathlib import Path
-from .util import validate_format
+from .util import name, validate_format, MetricVideoNode
 
 class VMAFMetric:
-    feature_id: None | int = None
+    feature_id: int
     formats: tuple[int, ...] = (
         vs.YUV410P12,
         vs.YUV420P12,
         vs.YUV422P12,
         vs.YUV444P12
     )
-    
+
     def __init__(self):
-        if self.feature_id is None:
+        if not hasattr(self, 'feature_id') or self.feature_id is None:
             raise ValueError("feature_id must be defined in subclass")
 
-    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode) -> vs.VideoNode:
+    def calculate(self, reference, distorted) -> vs.VideoNode | MetricVideoNode:
         """
         Calculates the metric score between two video nodes.
 
@@ -32,34 +31,61 @@ class VMAFMetric:
         Raises:
             ValueError: If one of the inputs has an unsupported format.
             """
-
+            
         validate_format(reference, self.formats)
         validate_format(distorted, self.formats)
 
-        return core.vmaf.Metric(reference=reference, distorted=distorted, feature=self.feature_id)  # type: ignore
+        clip = core.vmaf.Metric(
+            reference=reference, distorted=distorted, feature=self.feature_id  # type: ignore
+        )
+
+        return MetricVideoNode(clip, self)
+
+    @property
+    def props(self) -> list[str]:
+        raise NotImplementedError("props must be defined in subclass")
 
 
+class PSNRHVS(VMAFMetric):
+    feature_id = 1
+    props: list[str] = [
+        'psnr_hvs_y',
+        'psnr_hvs_cb',
+        'psnr_hvs_cr',
+        'psnr_hvs'
+    ]
+
+
+class SSIM(VMAFMetric):
+    feature_id = 2
+    props: list[str] = [
+        'float_ssim'
+    ]
+
+
+class MSSSIM(VMAFMetric):
+    feature_id = 3
+    props: list[str] = [
+        'float_ms_ssim'
+    ]
+
+
+class CIEDE2000(VMAFMetric):
+    feature_id = 4
+    props: list[str] = [
+        'ciede2000'
+    ]
+    
 # add as fallback or something
 # less CPU but less throughput
 
 #class PSNR(VMAFMetric):
 #    feature_id = 0
-
-class PSNRHVS(VMAFMetric):
-    feature_id = 1
-
-#class SSIM(VMAFMetric):
+#class SSIM2(VMAFMetric):
 #    feature_id = 2
 
-class MSSSIM(VMAFMetric):
-    feature_id = 3
-
-class CIEDE2000(VMAFMetric):
-    feature_id = 4
-
-
 class CAMBI:
-    formats: tuple[int, ...] = (
+    formats: list[int] = [
         vs.GRAY8,
         vs.GRAY10,
         vs.YUV420P8,
@@ -71,7 +97,11 @@ class CAMBI:
         vs.YUV420P10,
         vs.YUV422P10,
         vs.YUV444P10
-    )
+    ]
+
+    props: list[str] = [
+        'CAMBI'
+    ]
 
     def __init__(self,
         window_size: int = 63,
@@ -95,14 +125,14 @@ class CAMBI:
         self.topk = topk
         self.tvi_threshold = tvi_threshold
         self.scaling = scaling
-        self.cambi = None
+        self.cambi: vs.VideoNode
 
-    def calculate(self, reference: vs.VideoNode) -> vs.VideoNode:
+    def calculate(self, reference: vs.VideoNode) -> vs.VideoNode | MetricVideoNode:
         """
         :param clip:               Input clip. Must be in Grayscale or YUV format with integer sample type of 8/10 bit depth (subsampling can be arbitrary as cambi only uses the Y channel).
         """
 
-        validate_format(reference, self.formats)
+        validate_format(reference, self.formats) # type: ignore
 
         self.cambi = reference.akarin.Cambi(
             window_size=self.window_size,
@@ -112,15 +142,33 @@ class CAMBI:
             scores=True
         )
 
-        return self.cambi
+        return MetricVideoNode(self.cambi, self)
 
-    def mask(self) -> list[vs.VideoNode]:
+    def mask(self, merge: bool = True, scale: float = 2) -> list[vs.VideoNode] | vs.VideoNode:
         if self.cambi:
-            return [self.cambi.std.PropToClip('CAMBI_SCALE%d' % i) for i in range(5)]
+            obj =  [self.cambi.std.PropToClip('CAMBI_SCALE%d' % i) for i in range(5)]
+        
+            if merge:
+                from vsexprtools import combine, ExprOp
+                from vskernels import Point
+
+                cambi_masks = [Point.scale(i, self.cambi.width, self.cambi.height) for i in obj]
+ 
+                banding_mask = combine(
+                    cambi_masks, ExprOp.ADD, zip(range(1, 6), ExprOp.LOG, ExprOp.MUL),
+                    expr_suffix=[ExprOp.SQRT, scale, ExprOp.LOG, ExprOp.MUL]
+                ).std.Convolution([1, 2, 1, 2, 4, 2, 1, 2, 1])
+
+                return banding_mask
+
+            return obj
         else:
             raise ValueError("Cambi object not yet created. Call calculate() first.")
 
 
+# .eval method hack
+# write vmaf to file in frameeval
+# probably slow!
 class VMAF:
     def get_log_path(self, method_name: str):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

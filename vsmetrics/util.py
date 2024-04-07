@@ -1,6 +1,69 @@
-from vstools import Transfer, vs, core
+import os
+from vstools import Transfer, clip_async_render, vs, core
 import numpy as np
 from .enums import ColourSpace
+
+class MetricVideoNode:
+    def __init__(self, clip: vs.VideoNode, metric):
+        self._clip = clip
+        self._metric = metric
+        self._data = None
+
+    def write_csv(self, filepath, overwrite=False, exclusive: bool = False) -> None:
+        import pandas as pd
+        file_path = os.path.abspath(filepath)
+
+        if os.path.exists(file_path) and not overwrite:
+            if self._data is None:
+                self._data = pd.read_csv(file_path)
+            return
+
+        if self._data is None:
+            self._collect_data()
+
+        self._data.to_csv(file_path, index_label='Frame', index=True)
+
+    def plot(self, props=None):
+        import matplotlib.pyplot as plt
+
+        if self._data is None:
+            self._collect_data()
+
+        frames = range(len(self._data))
+
+        if props is None:
+            props = self._metric.props
+
+        for prop in props:
+            metric_values = self._data[prop]
+            
+            if prop.startswith("_"):
+                prop = prop[1:]
+
+            plt.plot(frames, metric_values, label=prop)
+
+        plt.xlabel('Frame')
+        plt.ylabel('Metric Value')
+        plt.title(f'{self._metric.__class__.__name__} Metric')
+        plt.grid(True)
+        plt.legend()
+        plt.show()
+
+    def _collect_data(self):
+        import pandas as pd
+
+        self._data = clip_async_render(
+            clip=self._clip,
+            outfile=None,
+            progress='Getting frame props...',
+            callback=lambda _, f: f.props.copy(),
+            async_requests=1
+        )
+        self._data = pd.DataFrame(self._data)
+
+    def __getattr__(self, name):
+        return getattr(self._clip, name)
+
 
 def name(cls):
     if 'name' not in cls.__dict__:
@@ -37,6 +100,8 @@ class ReductionMode:
         def __init__(self, chunks: int = 4):
             self.chunks = chunks
 
+# TODO
+# DECOUPLE THIS
 def pre_process(
     reference: vs.VideoNode,
     distorted: vs.VideoNode,
