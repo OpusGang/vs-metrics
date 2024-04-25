@@ -1,20 +1,52 @@
+from enum import Enum
 from vsmasktools import Prewitt, PrewittTCanny
-from .enums import ColormapTypes
-from .util import validate_format
-from vstools import vs, core, plane
+from vstools import vs, merge_clip_props, split, plane
 from mvsfunc import PlaneStatistics, PlaneCompare
-from .util import MetricVideoNode
+from .meta import BaseUtil, MetricVideoNode
 
-class Edge():
-    def calculate(self, reference: vs.VideoNode, mask = PrewittTCanny) -> vs.VideoNode:
-        mask = mask.edgemask(reference)
-        measure = core.std.PlaneStats(mask)
-        return reference.std.CopyFrameProps(measure)
+class Edge(BaseUtil):
+    props: list[str] = [
+        'Edge'
+    ]
+    
+    class Operator(Enum):
+        MAXIMUM = 'Max'
+        AVERAGE = 'Average'
+        MINIMUM = 'Min'
+
+    def calculate(self, reference: vs.VideoNode, planes: list[int] | int = [0, 1, 2]) -> vs.VideoNode | MetricVideoNode:
+
+        if isinstance(planes, int):
+            planes = [planes]
+
+        self.props = self._generate_props(
+            self.props, reference.format.color_family, planes # type: ignore
+        )
+        
+        edge = PrewittTCanny.edgemask(reference, planes=planes)
+        s = split(edge)
+
+        measure_results = []
+        for i, plane in enumerate(planes):
+            actual_index = plane if plane < len(s) else len(s) - 1  # dumb hack
+            measure_results.append(s[actual_index].std.PlaneStats(prop=f"{self.props[i]}_"))
+
+        merge = merge_clip_props(reference, *measure_results)
+        
+        updated_props = []
+        for prop in self.props:
+            for operator in Edge.Operator:
+                updated_props.append(f"{prop}_{operator.value}")
+
+        self.props = updated_props
+
+        return MetricVideoNode(merge, self)
+
 
 # TODO
 # COME UP WITH SOME WAY TO HANDLE SUBCLASSES REQUESTING DIFFERENT PLANES
 class MetricsWrapper:
-    def __init__(self, plane: int):
+    def __init__(self, plane: int = 0):
         self.plane = plane
 
     @property

@@ -1,111 +1,158 @@
 from enum import Enum
 from functools import partial
 from os import PathLike
-from typing import Optional
+from typing import Optional, TypedDict
 from vstools import padder, split, vs, core, mod_x, merge_clip_props
 from .util import validate_format, name
+from .meta import BaseUtil, MetricVideoNode
 
 
 class GMSD:
+    props: list[str] = ["PlaneGMSD"]
+    formats: tuple[int, ...] = (
+        vs.GRAYS,
+        vs.RGBS,
+        vs.YUV444PS
+    )
+
     def __init__(self, plane: None | int = None, downsample: bool = True, c: float = 0.0026):
         self.plane = plane
         self.downsample = downsample
         self.c = c
-        self.object: list[vs.VideoNode] = None  # type: ignore
 
-    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode) -> vs.VideoNode:
+    class GMSDVideoNode(MetricVideoNode):
+        def __init__(self, clips: tuple[vs.VideoNode, ...], metric):
+            super().__init__(clips[0], metric)
+            self._gradient_map = clips[1]
+
+        def gradient_map(self) -> vs.VideoNode:
+            return self._gradient_map
+
+    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode) -> GMSDVideoNode:
         from muvsfunc import GMSD as _GMSD
 
-        self.object = _GMSD(
+        validate_format(reference, self.formats)
+        validate_format(distorted, self.formats)
+
+        measure = _GMSD(
             reference,
             distorted,
             self.plane,
             self.downsample,
             self.c,
-            True # type: ignore
-            )  # type: ignore
-        
-        return core.std.CopyFrameProps(distorted, prop_src=self.object)
+            True  # type: ignore
+        )  # type: ignore
 
-    def gradient_map(self) -> vs.VideoNode:
-        return self.object[1]
+        measure = (
+            core.std.CopyFrameProps(distorted, measure, self.props),
+            measure
+        )
 
-
-class MDSI:
-    def __init__(self, resolution_scale: float = 1.0, alpha: float = 0.6):
-        self.down_scale = resolution_scale
-        self.alpha = alpha
-        self.object: vs.VideoNode
-
-    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode) -> vs.VideoNode:
-        from muvsfunc import MDSI as _MDSI
-
-        measure = _MDSI(
-            reference,
-            distorted,
-            self.down_scale, # type: ignore
-            self.alpha,
-            show_maps=True
-            ) 
-        
-        self.object = core.std.ClipToProp(distorted, measure[1], prop="gradient_map")
-        self.object = core.std.ClipToProp(self.object, measure[2], prop="chromaticity_map")
-        self.object = core.std.ClipToProp(self.object, measure[3], prop="gradient_chromaticity_map")
-
-        return core.std.CopyFrameProps(self.object, measure, "FrameMDSI")
-        
-    def gradient_map(self) -> vs.VideoNode:
-        mask = core.std.PropToClip(self.object, "gradient_map")
-        return mask.std.RemoveFrameProps("_Matrix").std.Limiter(0, 1)
-
-    def chromaticity_map(self) -> vs.VideoNode:
-        mask = core.std.PropToClip(self.object, "chromaticity_map")
-        return mask.std.RemoveFrameProps("_Matrix").std.Limiter(0, 1)
-
-    def gradient_chromaticity_map(self) -> vs.VideoNode:
-        mask = core.std.PropToClip(self.object, "gradient_chromaticity_map")
-        return mask.std.RemoveFrameProps("_Matrix").std.Limiter(0, 1)
+        return self.GMSDVideoNode(measure, self)
 
 
 class SSIM:
-    def __init__(
-        self, plane: Optional[int] = None, downsample: bool = True,
-        k1: float = 0.01, k2: float = 0.03, dynamic_range: int = 1
-        ):
+    props: list[str] = ["PlaneSSIM"]
+    formats: tuple[int, ...] = (
+        vs.GRAY8,
+        vs.GRAY16
+    )
 
+    def __init__(
+        self,
+        plane: Optional[int] = None,
+        downsample: bool = True,
+        k1: float = 0.01,
+        k2: float = 0.03,
+        dynamic_range: int = 1
+    ):
         self.plane = plane
         self.down_scale = downsample
         self.dynamic_range = dynamic_range
         self.k1 = k1
         self.k2 = k2
-        
-        self.object: vs.VideoNode
+
+    class SSIMVideoNode(MetricVideoNode):
+        def __init__(self, clips: tuple[vs.VideoNode, ...], metric):
+            super().__init__(clips[0], metric)
+            self._map = clips[1]
+
+        def map(self) -> vs.VideoNode:
+            return self._map
 
     def calculate(
         self,
         reference: vs.VideoNode,
         distorted: vs.VideoNode
-    ) -> vs.VideoNode:
+    ) -> SSIMVideoNode | vs.VideoNode:
         from muvsfunc import SSIM as _SSIM
 
-        self.object = _SSIM(
+        validate_format(reference, self.formats)
+        validate_format(distorted, self.formats)
+
+        measure = _SSIM(
             reference,
             distorted,
-            self.down_scale,
+            None,
             False,  # type: ignore
             self.k1,
             self.k2,
             self.dynamic_range,  # type: ignore
             show_map=True
-            )  # type: ignore
-        
-        return distorted.std.CopyFrameProps(
-            self.object, props="PlaneSSIM"
+        )  # type: ignore
+
+        measure = (
+            core.std.CopyFrameProps(
+                distorted,
+                measure,
+                self.props
+            ), measure
         )
 
-    def map(self) -> vs.VideoNode:
-        return self.object
+        return self.SSIMVideoNode(measure, self)
 
+class MDSI:
+    props: list[str] = ["FrameMDSI"]
+    formats: tuple[int, ...] = (
+        vs.RGB24,
+        vs.RGB48,
+        vs.RGBS
+    )
+
+    def __init__(self, alpha: float = 0.6):
+        self.alpha = alpha
+
+    class MDSIVideoNode(MetricVideoNode):
+        def __init__(self, clips: tuple[vs.VideoNode, ...], metric):
+            super().__init__(clips[0], metric)
+            self._gs_map = clips[1]
+            self._cs_map = clips[2]
+            self._gcs_map = clips[3]
+
+        def gradient_map(self) -> vs.VideoNode:
+            return self._gs_map.std.RemoveFrameProps("_Matrix")
+
+        def chromaticity_map(self) -> vs.VideoNode:
+            return self._cs_map.std.RemoveFrameProps("_Matrix")
+
+        def gradient_chromaticity_map(self) -> vs.VideoNode:
+            return self._gcs_map.std.RemoveFrameProps("_Matrix")
+
+    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode) -> MDSIVideoNode | vs.VideoNode:
+        from muvsfunc import MDSI as _MDSI
+
+        validate_format(reference, self.formats)
+        validate_format(distorted, self.formats)
+
+        measure = _MDSI(
+            reference,
+            distorted,
+            1.0,  # type: ignore
+            self.alpha,
+            show_maps=True
+        )
+
+        return self.MDSIVideoNode(measure, self) # type: ignore
 
 @name
 class PSNR:
@@ -213,7 +260,7 @@ class PSNR:
         return props
 
 
-    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode, planes: None | int | list[int] = None) -> vs.VideoNode:
+    def calculate(self, reference: vs.VideoNode, distorted: vs.VideoNode, planes: None | int | list[int] = None) -> vs.VideoNode | MetricVideoNode:
         """
         Calculates the Plane Peak Signal-to-Noise Ratio (PSNR) between two clips and stores the result in the frame properties of the output clip.
 
@@ -256,13 +303,16 @@ class PSNR:
         metric = merge_clip_props(distorted, *metric)
 
         if self.weights:
-            return core.std.ModifyFrame(
+            metric = core.std.ModifyFrame(
                 clip=metric,
                 clips=metric,
-                selector=partial(self.set_prop, props=[self.props[i] for i in planes])
+                selector=partial(
+                    self.set_prop,
+                    props=[self.props[i] for i in planes]
+                )
             )
 
-        return metric
+        return MetricVideoNode(metric, self)
 
     def __call__(self, reference: vs.VideoNode, distorted: vs.VideoNode, planes: None | int | list[int] = None) -> vs.VideoNode:
         return self.calculate(reference, distorted, planes)
@@ -289,7 +339,7 @@ class WADIQAM:
         self,
         dataset: Dataset = Dataset.TID,
         method: EvaluationMethod = EvaluationMethod.PATCHWISE,
-        model_path: None = None
+        model_path: None | PathLike = None
     ) -> None:
 
         from vs_wadiqam_chainer import wadiqam_fr, wadiqam_nr

@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from enum import Enum
 from os import PathLike
 from vstools import Matrix, Transfer, vs, core
-from .util import MetricVideoNode, validate_format
+from .util import validate_format
+from .meta import MetricVideoNode
 
 # ADD LUMA BIAS FOR DARK
 class SSIMULACRA:
@@ -73,8 +74,8 @@ class SSIMULACRA:
         """
         method = self.METHODS[self.provider]
         
-        #validate_format(reference, self.formats)
-        #validate_format(distorted, self.formats)
+        # validate_format(reference, self.formats)
+        # validate_format(distorted, self.formats)
 
         _reference = reference.resize.Bicubic(format=vs.RGBS)
         _distorted = distorted.resize.Bicubic(format=vs.RGBS)
@@ -88,18 +89,10 @@ class SSIMULACRA:
 
         measure = method(_reference, _distorted)
 
-        return distorted.std.CopyFrameProps(measure, props=str(self.prop))
+        clip =  distorted.std.CopyFrameProps(measure, props=str(self.prop))
+        return clip 
+    #MetricVideoNode(clip, self)
 
-#    def render(self, reference: vs.VideoNode, distorted: vs.VideoNode, filename: PathLike = "log.txt") -> None:
-#
-#        self.calculate()
-#
-#        clip_async_render(_cambi, outfile=None, progress="calculating CAMBI")
-
-        
-
-
-#@dataclass
 class BUTTERAUGLI:
     formats: tuple[int, ...] = (
         vs.RGB24,
@@ -111,53 +104,36 @@ class BUTTERAUGLI:
         '_FrameButteraugli'
     ]
 
-    """Quality metric for lossy image and video compression.
+    class BUTTERAUGLIVideoNode(MetricVideoNode):
+        def __init__(self, clips: list[vs.VideoNode], metric) -> None:
+            super().__init__(clips[0], metric)
+            self._map = clips[1]
 
-    Attributes:
-        intensity_target: Viewing conditions screen nits.
-    """
-    intensity_target: float = 80.0
+        def heatmap(self) -> vs.VideoNode:
+            """Returns the heatmap representing the differences between the two clips.
+
+            Returns:
+                vs.VideoNode: Heatmap clip representing the differences between the two clips.
+
+            Notes:
+                * This method should be called after the 'calculate' method has been called.
+            """
+            return self._map
     
     def calculate(
-        self, reference: vs.VideoNode, distorted: vs.VideoNode, linear: bool = False
-    ) -> vs.VideoNode | MetricVideoNode:
-        """Estimates the psychovisual similarity between two clips.
+        self, reference: vs.VideoNode,
+        distorted: vs.VideoNode,
+        intensity_target: float = 80.0,
+        linear: bool = False
+    ) -> BUTTERAUGLIVideoNode | vs.VideoNode:
 
-        Args:
-            reference (vs.VideoNode): Clip used as the reference. Must be in RGB 8/16/32-bit and match the dimension of 'distorted'.
-            distorted (vs.VideoNode): Clip used for comparison against 'reference'. Must be in RGB 8/16/32-bit and match the dimension of 'reference'.
-            linear (bool): True if the input clips have linear transfer functions. Otherwise, assumes sRGB color space and converts to linear transfer internally.
-
-        Returns:
-            vs.VideoNode: Output clip with the calculated psychovisual similarities stored as frame properties ('_FrameButteraugli').
-
-        Raises:
-            ValueError: If either 'reference' or 'distorted' is not in RGB 8/16/32-bit or their dimensions don't match.
-
-        Notes:
-            * Larger values indicate greater difference between the two clips.
-            * The default viewing condition is 80 cd/m^2 (nits), which corresponds to a typical modern display device. You can adjust this setting via the 'intensity_target' attribute.
-            * Input clips with nonlinear transfer functions (like gamma correction) will automatically be transformed into linear transfer before calculating the metrics.
-            * Set 'linear' to True if your input clips already have linear transfer functions.
-        """
-        self.butteraugli_obj = core.julek.Butteraugli(
+        heatmap = core.julek.Butteraugli(
             reference=reference,
             distorted=distorted,
-            intensity_target=self.intensity_target,
+            intensity_target=intensity_target,
             linput=linear,
             distmap=True
         )
         
-        clip = distorted.std.CopyFrameProps(prop_src=self.butteraugli_obj, props="_FrameButteraugli")
-        return MetricVideoNode(clip, self)
-    
-    def mask(self) -> vs.VideoNode:
-        """Returns the heatmap representing the differences between the two clips.
-
-        Returns:
-            vs.VideoNode: Heatmap clip representing the differences between the two clips.
-
-        Notes:
-            * This method should be called after the 'calculate' method has been called.
-        """
-        return self.butteraugli_obj
+        clip = distorted.std.CopyFrameProps(prop_src=heatmap, props="_FrameButteraugli")
+        return self.BUTTERAUGLIVideoNode([clip, heatmap], self)

@@ -2,7 +2,8 @@ from datetime import datetime
 import os
 from vstools import vs, core, clip_async_render
 from pathlib import Path
-from .util import name, validate_format, MetricVideoNode
+from .util import name, validate_format
+from .meta import MetricVideoNode
 
 class VMAFMetric:
     feature_id: int
@@ -31,7 +32,7 @@ class VMAFMetric:
         Raises:
             ValueError: If one of the inputs has an unsupported format.
             """
-            
+
         validate_format(reference, self.formats)
         validate_format(distorted, self.formats)
 
@@ -56,13 +57,6 @@ class PSNRHVS(VMAFMetric):
     ]
 
 
-class SSIM(VMAFMetric):
-    feature_id = 2
-    props: list[str] = [
-        'float_ssim'
-    ]
-
-
 class MSSSIM(VMAFMetric):
     feature_id = 3
     props: list[str] = [
@@ -75,14 +69,7 @@ class CIEDE2000(VMAFMetric):
     props: list[str] = [
         'ciede2000'
     ]
-    
-# add as fallback or something
-# less CPU but less throughput
 
-#class PSNR(VMAFMetric):
-#    feature_id = 0
-#class SSIM2(VMAFMetric):
-#    feature_id = 2
 
 class CAMBI:
     formats: list[int] = [
@@ -144,16 +131,16 @@ class CAMBI:
 
         return MetricVideoNode(self.cambi, self)
 
-    def mask(self, merge: bool = True, scale: float = 2) -> list[vs.VideoNode] | vs.VideoNode:
+    def mask(self, merge: bool = True) -> list[vs.VideoNode] | vs.VideoNode:
         if self.cambi:
             obj =  [self.cambi.std.PropToClip('CAMBI_SCALE%d' % i) for i in range(5)]
         
             if merge:
                 from vsexprtools import combine, ExprOp
                 from vskernels import Point
-
                 cambi_masks = [Point.scale(i, self.cambi.width, self.cambi.height) for i in obj]
- 
+
+                scale = 2
                 banding_mask = combine(
                     cambi_masks, ExprOp.ADD, zip(range(1, 6), ExprOp.LOG, ExprOp.MUL),
                     expr_suffix=[ExprOp.SQRT, scale, ExprOp.LOG, ExprOp.MUL]
