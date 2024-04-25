@@ -5,30 +5,42 @@ pip install git+https://github.com/OpusGang/vs-metrics.git --no-cache-dir -U
 ```
 
 ```sh
-from vsmetrics import (
-    BUTTERAUGLI,
-    CAMBI,
-    MAD,
-    MAE,
-    MDSI,
-    GMSD,
-    MSSSIM,
-    PSNR,
-    PSNRHVS,
-    RMS,
-    RMSE,
-    SSIM,
-    SSIMULACRA,
-    VMAF,
-    WADIQAM,
-    ColorMap,
-    Correlation,
-    Covariance,
-    Mean,
-    StandardDeviation,
-    Variance,
-    VisualizeDiffs,
-)
+    from vsmetrics import (
+        BRISQUE,
+        BUTTERAUGLI,
+        CAMBI,
+        CIEDE2000,
+        GLCM,
+        GMSD,
+        LPIPS,
+        MAD,
+        MAE,
+        MDSI,
+        MSSSIM,
+        PSNR,
+        PSNRHVS,
+        RMS,
+        RMSE,
+        SSIM,
+        SSIMULACRA,
+        SVD,
+        VIF,
+        VMAF,
+        WADIQAM,
+        Blur,
+        ColorMap,
+        ColormapTypes,
+        Correlation,
+        Covariance,
+        Edge,
+        Hash_3117,
+        LocaLBinaryPattern,
+        Mean,
+        StandardDeviation,
+        Variance,
+        VisualizeDiffs,
+    )
+
 from vstools import vs, core, Matrix
 from vsrgtools import gauss_blur
 
@@ -53,6 +65,9 @@ compare2.plot()
 
 # write to CSV
 compare2.write_csv("test.csv", overwrite=True)
+
+# basic summary
+compare1.print_statistics()
 
 src.set_output()
 compare1.set_output(1)
