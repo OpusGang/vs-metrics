@@ -16,7 +16,7 @@ requires-python = ">=3.12"
 
 dependencies = [
   "VapourSynth >= 66",
-  "vstools"
+  "vstools",
   "numpy"
 ]
 
